@@ -1,15 +1,14 @@
-import os
-
-from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from app.conf.settings import settings
 
-username = os.getenv("PGUSER")
-password = os.getenv("PGPASSWORD")
-database = os.getenv("DATABASE")
 
-SQLALCHEMY_DATABASE_URI = f"postgresql://{username}:{password}@localhost:5432/{database}"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URI
+engine = create_async_engine(settings.SQLALCHEMY_DATABASE_URI, echo=True)
+async_session = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+async def get_session() -> AsyncSession:
+    async with async_session() as session:
+        yield session
