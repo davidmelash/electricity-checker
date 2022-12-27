@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 import enum
-import bcrypt
+from typing import Optional
 
-from sqlalchemy import Integer, String, Column, Enum, Text
+from sqlalchemy import Integer, String, Column, Enum, Text, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.conf.hashing import get_password_hash
 from app.db.base_class import Base
 
 
-class RoleEnum(enum.Enum):
+class RoleEnum(str, enum.Enum):
     SIMPLE = "simple"
     ADVANCED = "advanced"
     ADMIN = "admin"
@@ -19,20 +23,22 @@ class User(Base):
     role = Column(Enum(RoleEnum), nullable=False)
     password_hash = Column(Text, nullable=False)
     
-    @property
-    def password(self):
-        raise AttributeError("User.password is write-only")
+    @classmethod
+    async def get_by_email(cls, session: AsyncSession, user_email: str) -> Optional[User]:
+        query = select(cls).where(cls.email == user_email)
+        result = (await session.execute(query)).first()
+        return result.User if result else None
     
-    @staticmethod
-    def generate_hash_password(password: str, rounds: int = 12):
-        password = password.encode()
-        salt = bcrypt.gensalt(rounds)
-        return bcrypt.hashpw(password, salt)
-    
-    @password.setter
-    def password(self, password: str) -> None:
-        self.password_hash = self.generate_hash_password(password)
-    
-    def verify_password(self, password: str):
-        pwhash = self.generate_hash_password(password)
-        return pwhash == self.password_hash
+    @classmethod
+    async def create(cls, session: AsyncSession, user) -> Optional[User]:
+        user_dict = user.dict()
+        user_dict.pop("password")
+        new_user = User(**user_dict)
+        new_user.password_hash = await get_password_hash(user.password)
+        
+        session.add(new_user)
+        await session.commit()
+        user = await cls.get_by_email(session, new_user.email)
+        if not user:
+            raise RuntimeError()
+        return user
